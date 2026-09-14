@@ -1,0 +1,494 @@
+###############################################################################
+# StatGPT Docker Compose
+#
+# Deploys all StatGPT application components. Keycloak must already be
+# reachable. DIAL may be the sibling stack in dial/ or any other reachable
+# DIAL deployment.
+#
+# Shared network (create once): docker network create statgpt
+#
+# Configuration: copy .env.example to .env and fill in values.
+# Compose loads .env automatically for ${VAR} substitution below.
+#
+# Usage:
+#   docker network create statgpt
+#   # optional: start dial/ first (see dial/README.md)
+#   cp .env.example .env
+#   docker compose up -d
+###############################################################################
+
+name: statgpt
+
+services:
+  #############################################################################
+  # chat-backend
+  #############################################################################
+
+  chat-backend:
+    image: epam/statgpt-chat-backend:${BACKEND_VERSION}
+    restart: unless-stopped
+    environment:
+      DIAL_APP_NAME: ${CHAT_BACKEND_DIAL_APP_NAME:-StatGPT}
+      DIAL_SHOW_DEBUG_STAGES: ${CHAT_BACKEND_DIAL_SHOW_DEBUG_STAGES:-false}
+      DIAL_SHOW_STAGE_SECONDS: ${CHAT_BACKEND_DIAL_SHOW_STAGE_SECONDS:-false}
+      WEB_CONCURRENCY: ${CHAT_BACKEND_WEB_CONCURRENCY:-1}
+      LANGCHAIN_VERBOSE: ${CHAT_BACKEND_LANGCHAIN_VERBOSE:-false}
+      LANGCHAIN_DEBUG: ${CHAT_BACKEND_LANGCHAIN_DEBUG:-false}
+      LANGCHAIN_DEFAULT_SEED: ${CHAT_BACKEND_LANGCHAIN_DEFAULT_SEED:-820288}
+      DIAL_URL: ${CHAT_BACKEND_DIAL_URL}
+      DIAL_API_KEY: ${CHAT_BACKEND_DIAL_API_KEY}
+      PGVECTOR_HOST: ${CHAT_BACKEND_PGVECTOR_HOST:-pgvector}
+      PGVECTOR_PORT: ${CHAT_BACKEND_PGVECTOR_PORT:-5432}
+      PGVECTOR_DATABASE: ${CHAT_BACKEND_PGVECTOR_DATABASE:-${PGVECTOR_DATABASE:-statgpt}}
+      PGVECTOR_USER: ${CHAT_BACKEND_PGVECTOR_USER:-${PGVECTOR_USER:-statgpt}}
+      PGVECTOR_PASSWORD: ${CHAT_BACKEND_PGVECTOR_PASSWORD:-${PGVECTOR_PASSWORD}}
+      PGVECTOR_USE_MSI: ${CHAT_BACKEND_PGVECTOR_USE_MSI:-false}
+      PGVECTOR_MSI_SCOPE: ${CHAT_BACKEND_PGVECTOR_MSI_SCOPE:-https://ossrdbms-aad.database.windows.net/.default}
+      PGVECTOR_MSI_TOKEN_REFRESH_TIMEOUT: ${CHAT_BACKEND_PGVECTOR_MSI_TOKEN_REFRESH_TIMEOUT:-86400}
+      ELASTIC_CONNECTION_STRING: ${CHAT_BACKEND_ELASTIC_CONNECTION_STRING:-http://elasticsearch:9200}
+      ELASTIC_AUTH_USER: ${CHAT_BACKEND_ELASTIC_AUTH_USER:-${ELASTIC_AUTH_USER:-elastic}}
+      ELASTIC_AUTH_PASSWORD: ${CHAT_BACKEND_ELASTIC_AUTH_PASSWORD:-${ELASTIC_AUTH_PASSWORD}}
+      ELASTIC_INDICATORS_INDEX: ${CHAT_BACKEND_ELASTIC_INDICATORS_INDEX:-statgpt-indicators}
+      ELASTIC_MATCHING_INDEX: ${CHAT_BACKEND_ELASTIC_MATCHING_INDEX:-statgpt-matching}
+      # MCP Apps (required when mcp-app-frontend is used)
+      MCP_APP_ORIGIN: ${CHAT_BACKEND_MCP_APP_ORIGIN:-http://localhost:3002}
+      MCP_APP_HTML_HOST: ${CHAT_BACKEND_MCP_APP_HTML_HOST:-http://mcp-app-frontend:8080}
+      # Data related (required for StatGPT channels that use SDMX Proxy)
+      SDMX_PROXY_HOST: ${CHAT_BACKEND_SDMX_PROXY_HOST:-http://sdmx-proxy:8050}
+    ports:
+      - "5100:5000"
+    networks:
+      - statgpt
+    depends_on:
+      pgvector:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')\"",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  #############################################################################
+  # admin-backend
+  #############################################################################
+
+  # One-shot DB migration (ADMIN_MODE=INIT) before the application starts
+  admin-backend-init:
+    image: epam/statgpt-admin-backend:${BACKEND_VERSION}
+    restart: "no"
+    environment:
+      ADMIN_MODE: INIT
+      WEB_CONCURRENCY: ${ADMIN_BACKEND_WEB_CONCURRENCY:-1}
+      OIDC_AUTH_ENABLED: ${ADMIN_BACKEND_OIDC_AUTH_ENABLED:-true}
+      OIDC_CONFIGURATION_ENDPOINT: ${ADMIN_BACKEND_OIDC_CONFIGURATION_ENDPOINT}
+      OIDC_CLIENT_ID: ${ADMIN_BACKEND_OIDC_CLIENT_ID}
+      OIDC_ISSUER: ${ADMIN_BACKEND_OIDC_ISSUER}
+      OIDC_USERNAME_CLAIM: ${ADMIN_BACKEND_OIDC_USERNAME_CLAIM}
+      ADMIN_ROLES_CLAIM: ${ADMIN_BACKEND_ADMIN_ROLES_CLAIM}
+      ADMIN_ROLES_VALUES: ${ADMIN_BACKEND_ADMIN_ROLES_VALUES}
+      ADMIN_SCOPE_CLAIM_VALIDATION_ENABLED: ${ADMIN_BACKEND_ADMIN_SCOPE_CLAIM_VALIDATION_ENABLED:-true}
+      ADMIN_SCOPE_CLAIM: ${ADMIN_BACKEND_ADMIN_SCOPE_CLAIM}
+      ADMIN_SCOPE_VALUE: ${ADMIN_BACKEND_ADMIN_SCOPE_VALUE}
+      DIAL_URL: ${ADMIN_BACKEND_DIAL_URL}
+      DIAL_API_KEY: ${ADMIN_BACKEND_DIAL_API_KEY}
+      PGVECTOR_HOST: ${ADMIN_BACKEND_PGVECTOR_HOST:-pgvector}
+      PGVECTOR_PORT: ${ADMIN_BACKEND_PGVECTOR_PORT:-5432}
+      PGVECTOR_DATABASE: ${ADMIN_BACKEND_PGVECTOR_DATABASE:-${PGVECTOR_DATABASE:-statgpt}}
+      PGVECTOR_USER: ${ADMIN_BACKEND_PGVECTOR_USER:-${PGVECTOR_USER:-statgpt}}
+      PGVECTOR_PASSWORD: ${ADMIN_BACKEND_PGVECTOR_PASSWORD:-${PGVECTOR_PASSWORD}}
+      PGVECTOR_USE_MSI: ${ADMIN_BACKEND_PGVECTOR_USE_MSI:-false}
+      PGVECTOR_MSI_SCOPE: ${ADMIN_BACKEND_PGVECTOR_MSI_SCOPE:-https://ossrdbms-aad.database.windows.net/.default}
+      PGVECTOR_MSI_TOKEN_REFRESH_TIMEOUT: ${ADMIN_BACKEND_PGVECTOR_MSI_TOKEN_REFRESH_TIMEOUT:-86400}
+      ELASTIC_CONNECTION_STRING: ${ADMIN_BACKEND_ELASTIC_CONNECTION_STRING:-http://elasticsearch:9200}
+      ELASTIC_AUTH_USER: ${ADMIN_BACKEND_ELASTIC_AUTH_USER:-${ELASTIC_AUTH_USER:-elastic}}
+      ELASTIC_AUTH_PASSWORD: ${ADMIN_BACKEND_ELASTIC_AUTH_PASSWORD:-${ELASTIC_AUTH_PASSWORD}}
+      ELASTIC_INDICATORS_INDEX: ${ADMIN_BACKEND_ELASTIC_INDICATORS_INDEX:-statgpt-indicators}
+      ELASTIC_MATCHING_INDEX: ${ADMIN_BACKEND_ELASTIC_MATCHING_INDEX:-statgpt-matching}
+      # MCP Apps (required when mcp-app-frontend is used)
+      MCP_APP_ORIGIN: ${ADMIN_BACKEND_MCP_APP_ORIGIN:-http://localhost:3002}
+      MCP_APP_HTML_HOST: ${ADMIN_BACKEND_MCP_APP_HTML_HOST:-http://mcp-app-frontend:8080}
+      # Data related (required for StatGPT channels that use SDMX Proxy)
+      SDMX_PROXY_HOST: ${ADMIN_BACKEND_SDMX_PROXY_HOST:-http://sdmx-proxy:8050}
+      SDMX_PROXY_CONFIG_SERVER_HOST: ${ADMIN_BACKEND_SDMX_PROXY_CONFIG_SERVER_HOST:-http://sdmx-proxy-config-server:8060}
+    networks:
+      - statgpt
+    depends_on:
+      pgvector:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+
+  admin-backend:
+    image: epam/statgpt-admin-backend:${BACKEND_VERSION}
+    restart: unless-stopped
+    environment:
+      ADMIN_MODE: ${ADMIN_BACKEND_ADMIN_MODE:-APP}
+      WEB_CONCURRENCY: ${ADMIN_BACKEND_WEB_CONCURRENCY:-1}
+      OIDC_AUTH_ENABLED: ${ADMIN_BACKEND_OIDC_AUTH_ENABLED:-true}
+      OIDC_CONFIGURATION_ENDPOINT: ${ADMIN_BACKEND_OIDC_CONFIGURATION_ENDPOINT}
+      OIDC_CLIENT_ID: ${ADMIN_BACKEND_OIDC_CLIENT_ID}
+      OIDC_ISSUER: ${ADMIN_BACKEND_OIDC_ISSUER}
+      OIDC_USERNAME_CLAIM: ${ADMIN_BACKEND_OIDC_USERNAME_CLAIM}
+      ADMIN_ROLES_CLAIM: ${ADMIN_BACKEND_ADMIN_ROLES_CLAIM}
+      ADMIN_ROLES_VALUES: ${ADMIN_BACKEND_ADMIN_ROLES_VALUES}
+      ADMIN_SCOPE_CLAIM_VALIDATION_ENABLED: ${ADMIN_BACKEND_ADMIN_SCOPE_CLAIM_VALIDATION_ENABLED:-true}
+      ADMIN_SCOPE_CLAIM: ${ADMIN_BACKEND_ADMIN_SCOPE_CLAIM}
+      ADMIN_SCOPE_VALUE: ${ADMIN_BACKEND_ADMIN_SCOPE_VALUE}
+      DIAL_URL: ${ADMIN_BACKEND_DIAL_URL}
+      DIAL_API_KEY: ${ADMIN_BACKEND_DIAL_API_KEY}
+      PGVECTOR_HOST: ${ADMIN_BACKEND_PGVECTOR_HOST:-pgvector}
+      PGVECTOR_PORT: ${ADMIN_BACKEND_PGVECTOR_PORT:-5432}
+      PGVECTOR_DATABASE: ${ADMIN_BACKEND_PGVECTOR_DATABASE:-${PGVECTOR_DATABASE:-statgpt}}
+      PGVECTOR_USER: ${ADMIN_BACKEND_PGVECTOR_USER:-${PGVECTOR_USER:-statgpt}}
+      PGVECTOR_PASSWORD: ${ADMIN_BACKEND_PGVECTOR_PASSWORD:-${PGVECTOR_PASSWORD}}
+      PGVECTOR_USE_MSI: ${ADMIN_BACKEND_PGVECTOR_USE_MSI:-false}
+      PGVECTOR_MSI_SCOPE: ${ADMIN_BACKEND_PGVECTOR_MSI_SCOPE:-https://ossrdbms-aad.database.windows.net/.default}
+      PGVECTOR_MSI_TOKEN_REFRESH_TIMEOUT: ${ADMIN_BACKEND_PGVECTOR_MSI_TOKEN_REFRESH_TIMEOUT:-86400}
+      ELASTIC_CONNECTION_STRING: ${ADMIN_BACKEND_ELASTIC_CONNECTION_STRING:-http://elasticsearch:9200}
+      ELASTIC_AUTH_USER: ${ADMIN_BACKEND_ELASTIC_AUTH_USER:-${ELASTIC_AUTH_USER:-elastic}}
+      ELASTIC_AUTH_PASSWORD: ${ADMIN_BACKEND_ELASTIC_AUTH_PASSWORD:-${ELASTIC_AUTH_PASSWORD}}
+      ELASTIC_INDICATORS_INDEX: ${ADMIN_BACKEND_ELASTIC_INDICATORS_INDEX:-statgpt-indicators}
+      ELASTIC_MATCHING_INDEX: ${ADMIN_BACKEND_ELASTIC_MATCHING_INDEX:-statgpt-matching}
+      # MCP Apps (required when mcp-app-frontend is used)
+      MCP_APP_ORIGIN: ${ADMIN_BACKEND_MCP_APP_ORIGIN:-http://localhost:3002}
+      MCP_APP_HTML_HOST: ${ADMIN_BACKEND_MCP_APP_HTML_HOST:-http://mcp-app-frontend:8080}
+      # Data related (required for StatGPT channels that use SDMX Proxy)
+      SDMX_PROXY_HOST: ${ADMIN_BACKEND_SDMX_PROXY_HOST:-http://sdmx-proxy:8050}
+      SDMX_PROXY_CONFIG_SERVER_HOST: ${ADMIN_BACKEND_SDMX_PROXY_CONFIG_SERVER_HOST:-http://sdmx-proxy-config-server:8060}
+    ports:
+      - "8000:8000"
+    networks:
+      - statgpt
+    depends_on:
+      admin-backend-init:
+        condition: service_completed_successfully
+      pgvector:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\"",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+
+  #############################################################################
+  # admin-frontend
+  #############################################################################
+
+  admin-frontend:
+    image: epam/statgpt-admin-frontend:${ADMIN_FRONTEND_VERSION}
+    restart: unless-stopped
+    environment:
+      DIAL_API_URL: ${ADMIN_FRONTEND_DIAL_API_URL}
+      DIAL_API_KEY: ${ADMIN_FRONTEND_DIAL_API_KEY}
+      API_URL: ${ADMIN_FRONTEND_API_URL:-http://admin-backend:8000/admin}
+      AUTH_URL: ${ADMIN_FRONTEND_AUTH_URL}
+      AUTH_TRUST_HOST: ${ADMIN_FRONTEND_AUTH_TRUST_HOST:-true}
+      AUTH_SECRET: ${ADMIN_FRONTEND_AUTH_SECRET}
+      AUTH_KEYCLOAK_HOST: ${ADMIN_FRONTEND_AUTH_KEYCLOAK_HOST}
+      AUTH_KEYCLOAK_CLIENT_ID: ${ADMIN_FRONTEND_AUTH_KEYCLOAK_CLIENT_ID}
+      AUTH_KEYCLOAK_SECRET: ${ADMIN_FRONTEND_AUTH_KEYCLOAK_SECRET}
+      # AUTH_AZURE_AD_CLIENT_ID: ${ADMIN_FRONTEND_AUTH_AZURE_AD_CLIENT_ID}
+      # AUTH_AZURE_AD_NAME: ${ADMIN_FRONTEND_AUTH_AZURE_AD_NAME}
+      # AUTH_AZURE_AUTHORITY_URL: ${ADMIN_FRONTEND_AUTH_AZURE_AUTHORITY_URL}
+      # AUTH_AZURE_AD_SCOPE: ${ADMIN_FRONTEND_AUTH_AZURE_AD_SCOPE}
+      # AUTH_AZURE_AD_TENANT_ID: ${ADMIN_FRONTEND_AUTH_AZURE_AD_TENANT_ID}
+      # AUTH_AZURE_AD_SECRET: ${ADMIN_FRONTEND_AUTH_AZURE_AD_SECRET}
+    ports:
+      - "4100:3000"
+    networks:
+      - statgpt
+    depends_on:
+      admin-backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q --spider http://127.0.0.1:3000/api/health || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  #############################################################################
+  # pgvector
+  #############################################################################
+
+  pgvector:
+    image: pgvector/pgvector:${PGVECTOR_IMAGE_TAG:-0.8.1-pg16}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PGVECTOR_USER:-statgpt}
+      POSTGRES_PASSWORD: ${PGVECTOR_PASSWORD}
+      POSTGRES_DB: ${PGVECTOR_DATABASE:-statgpt}
+      # Used by init script to create a separate DB for generic-rag (must match GENERIC_RAG_DB_NAME)
+      PGVECTOR_GENERIC_RAG_DATABASE: ${PGVECTOR_GENERIC_RAG_DATABASE:-statgpt_generic_rag}
+    volumes:
+      - pgvector-data:/var/lib/postgresql/data
+    configs:
+      - source: pgvector-init
+        target: /docker-entrypoint-initdb.d/01-init-databases.sh
+    ports:
+      - "5432:5432"
+    networks:
+      - statgpt
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  #############################################################################
+  # elasticsearch
+  #############################################################################
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTICSEARCH_VERSION:-8.14.3}
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      # Security disabled for local/example use. Set to "true" and set ELASTIC_PASSWORD when enabling auth
+      xpack.security.enabled: "false"
+      xpack.security.http.ssl.enabled: "false"
+      # Used when xpack.security.enabled is "true" (elastic superuser password)
+      ELASTIC_PASSWORD: ${ELASTIC_AUTH_PASSWORD:-}
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - statgpt
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -s http://localhost:9200/_cluster/health | grep -qE '\"status\":\"(green|yellow)\"'",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+  #############################################################################
+  # portal-frontend
+  #############################################################################
+
+  portal-frontend:
+    image: epam/statgpt-global-trusted-data-commons:${PORTAL_FRONTEND_VERSION}
+    restart: unless-stopped
+    environment:
+      DIAL_API_URL: ${PORTAL_FRONTEND_DIAL_API_URL}
+      DIAL_API_KEY: ${PORTAL_FRONTEND_DIAL_API_KEY}
+      DIAL_API_VERSION: ${PORTAL_FRONTEND_DIAL_API_VERSION}
+      DEFAULT_MODEL: ${PORTAL_FRONTEND_DEFAULT_MODEL}
+      AUTH_URL: ${PORTAL_FRONTEND_AUTH_URL}
+      AUTH_TRUST_HOST: ${PORTAL_FRONTEND_AUTH_TRUST_HOST:-true}
+      CROSS_DATASET_MODE: ${PORTAL_FRONTEND_CROSS_DATASET_MODE:-false}
+      INFO_BANNER_MESSAGE: ${PORTAL_FRONTEND_INFO_BANNER_MESSAGE:-}
+      AUTH_SECRET: ${PORTAL_FRONTEND_AUTH_SECRET}
+      AUTH_KEYCLOAK_HOST: ${PORTAL_FRONTEND_AUTH_KEYCLOAK_HOST}
+      AUTH_KEYCLOAK_CLIENT_ID: ${PORTAL_FRONTEND_AUTH_KEYCLOAK_CLIENT_ID}
+      AUTH_KEYCLOAK_SECRET: ${PORTAL_FRONTEND_AUTH_KEYCLOAK_SECRET}
+      # AUTH_AZURE_AD_CLIENT_ID: ${PORTAL_FRONTEND_AUTH_AZURE_AD_CLIENT_ID}
+      # AUTH_AZURE_AD_NAME: ${PORTAL_FRONTEND_AUTH_AZURE_AD_NAME}
+      # AUTH_AZURE_AUTHORITY_URL: ${PORTAL_FRONTEND_AUTH_AZURE_AUTHORITY_URL}
+      # AUTH_AZURE_AD_SCOPE: ${PORTAL_FRONTEND_AUTH_AZURE_AD_SCOPE}
+      # AUTH_AZURE_AD_TENANT_ID: ${PORTAL_FRONTEND_AUTH_AZURE_AD_TENANT_ID}
+      # AUTH_AZURE_AD_SECRET: ${PORTAL_FRONTEND_AUTH_AZURE_AD_SECRET}
+    ports:
+      - "4200:3000"
+    networks:
+      - statgpt
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q --spider http://127.0.0.1:3000/api/health || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  #############################################################################
+  # sdmx-proxy
+  #############################################################################
+
+  sdmx-proxy:
+    image: epam/statgpt-sdmx-proxy:${SDMX_PROXY_VERSION}
+    restart: unless-stopped
+    environment:
+      SDMXPROXY_REGISTRY_CONFIG_SOURCE_TYPE: ${SDMX_PROXY_SDMXPROXY_REGISTRY_CONFIG_SOURCE_TYPE:-CONFIG_SERVER}
+      SDMXPROXY_REGISTRY_CONFIG_SOURCE_CONFIGSERVER_URL: ${SDMX_PROXY_SDMXPROXY_REGISTRY_CONFIG_SOURCE_CONFIGSERVER_URL:-http://sdmx-proxy-config-server:8060}
+      SDMXPROXY_REGISTRY_CONFIG_SOURCE_CONFIGSERVER_POLLINTERVAL: ${SDMX_PROXY_SDMXPROXY_REGISTRY_CONFIG_SOURCE_CONFIGSERVER_POLLINTERVAL:-PT180S}
+      # SDMXPROXY_REGISTRY_CONFIG_SOURCE_DIALSTORAGE_BASEURL: ${SDMX_PROXY_SDMXPROXY_REGISTRY_CONFIG_SOURCE_DIALSTORAGE_BASEURL}
+      # SDMXPROXY_REGISTRY_CONFIG_SOURCE_FILENAME: ${SDMX_PROXY_SDMXPROXY_REGISTRY_CONFIG_SOURCE_FILENAME}
+      # SDMXPROXY_REGISTRY_CONFIG_SOURCE_DIALSTORAGE_APIKEY: ${SDMX_PROXY_SDMXPROXY_REGISTRY_CONFIG_SOURCE_DIALSTORAGE_APIKEY}
+    ports:
+      - "8050:8050"
+    networks:
+      - statgpt
+    depends_on:
+      sdmx-proxy-config-server:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q --spider http://127.0.0.1:8050/statgpt/sdmx-proxy/api/v0/health || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  #############################################################################
+  # sdmx-proxy-config-server
+  #############################################################################
+
+  sdmx-proxy-config-server:
+    image: epam/statgpt-sdmx-proxy-config-server:${SDMX_PROXY_VERSION}
+    restart: unless-stopped
+    environment:
+      CONFIG_SERVER_SOURCE_TYPE: ${SDMX_PROXY_CONFIG_SERVER_CONFIG_SERVER_SOURCE_TYPE:-DIAL_STORAGE}
+      CONFIG_SERVER_SOURCE_CONFIG_PATH: ${SDMX_PROXY_CONFIG_SERVER_CONFIG_SERVER_SOURCE_CONFIG_PATH}
+      CONFIG_SERVER_FORCE_SEED: ${SDMX_PROXY_CONFIG_SERVER_CONFIG_SERVER_FORCE_SEED:-false}
+      DIAL_STORAGE_BASE_URL: ${SDMX_PROXY_CONFIG_SERVER_DIAL_STORAGE_BASE_URL}
+      DIAL_STORAGE_API_KEY: ${SDMX_PROXY_CONFIG_SERVER_DIAL_STORAGE_API_KEY}
+    ports:
+      - "8060:8060"
+    networks:
+      - statgpt
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q --spider http://127.0.0.1:8060/health || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  #############################################################################
+  # mcp-app-frontend
+  #############################################################################
+
+  mcp-app-frontend:
+    image: epam/statgpt-mcp-app-frontend:${MCP_APP_FRONTEND_VERSION}
+    restart: unless-stopped
+    environment:
+      # Public origin for widget assets (must match *_MCP_APP_ORIGIN on backends)
+      VITE_BASE_URL: ${MCP_APP_FRONTEND_VITE_BASE_URL:-http://localhost:3002}
+    ports:
+      - "3002:8080"
+    networks:
+      - statgpt
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q --spider http://127.0.0.1:8080/ || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  #############################################################################
+  # generic-rag
+  #############################################################################
+
+  generic-rag:
+    image: epam/ai-dial-generic-rag-backend:${GENERIC_RAG_VERSION}
+    restart: unless-stopped
+    environment:
+      ENABLE_DEBUG_STAGES: ${GENERIC_RAG_ENABLE_DEBUG_STAGES:-false}
+      IN_MEMORY_CACHE_ENABLED: ${GENERIC_RAG_IN_MEMORY_CACHE_ENABLED:-true}
+      IN_MEMORY_CACHE_CAPACITY: ${GENERIC_RAG_IN_MEMORY_CACHE_CAPACITY:-128MiB}
+      DIAL_URL: ${GENERIC_RAG_DIAL_URL}
+      DIAL_PUBLIC_URL: ${GENERIC_RAG_DIAL_PUBLIC_URL:-}
+      DIAL_API_KEY: ${GENERIC_RAG_DIAL_API_KEY}
+      DB_HOST: ${GENERIC_RAG_DB_HOST:-pgvector}
+      DB_PORT: ${GENERIC_RAG_DB_PORT:-5432}
+      DB_NAME: ${GENERIC_RAG_DB_NAME:-statgpt_generic_rag}
+      DB_USERNAME: ${GENERIC_RAG_DB_USERNAME:-${PGVECTOR_USER:-statgpt}}
+      DB_PASSWORD: ${GENERIC_RAG_DB_PASSWORD:-${PGVECTOR_PASSWORD}}
+      DB_MSI_ENABLED: ${GENERIC_RAG_DB_MSI_ENABLED:-false}
+      ELASTICSEARCH_URL: ${GENERIC_RAG_ELASTICSEARCH_URL:-http://elasticsearch:9200}
+      ELASTICSEARCH_USERNAME: ${GENERIC_RAG_ELASTICSEARCH_USERNAME:-${ELASTIC_AUTH_USER:-elastic}}
+      ELASTICSEARCH_PASSWORD: ${GENERIC_RAG_ELASTICSEARCH_PASSWORD:-${ELASTIC_AUTH_PASSWORD:-}}
+      ELASTICSEARCH_INDEX_PREFIX: ${GENERIC_RAG_ELASTICSEARCH_INDEX_PREFIX:-generic-rag-}
+    ports:
+      - "5001:5000"
+    networks:
+      - statgpt
+    depends_on:
+      pgvector:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')\"",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+networks:
+  statgpt:
+    name: statgpt
+    external: true
+
+volumes:
+  pgvector-data:
+  elasticsearch-data:
+
+configs:
+  pgvector-init:
+    content: |
+      #!/bin/sh
+      set -e
+
+      echo "=== Creating vector extension in primary database ($$POSTGRES_DB) ==="
+      psql -v ON_ERROR_STOP=1 --username "$$POSTGRES_USER" --dbname "$$POSTGRES_DB" -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+      TARGET_DB="$${PGVECTOR_GENERIC_RAG_DATABASE:-statgpt_generic_rag}"
+
+      if [ "$$TARGET_DB" != "$$POSTGRES_DB" ]; then
+        echo "=== Initializing generic-rag database: $$TARGET_DB ==="
+        if ! psql -v ON_ERROR_STOP=1 --username "$$POSTGRES_USER" --dbname "$$POSTGRES_DB" -tAc "SELECT 1 FROM pg_database WHERE datname='$$TARGET_DB'" | grep -q 1; then
+          echo "Creating database: $$TARGET_DB"
+          psql -v ON_ERROR_STOP=1 --username "$$POSTGRES_USER" --dbname "$$POSTGRES_DB" -c "CREATE DATABASE \"$$TARGET_DB\";"
+        else
+          echo "Database $$TARGET_DB already exists. Skipping creation."
+        fi
+
+        echo "Creating vector extension in $$TARGET_DB..."
+        psql -v ON_ERROR_STOP=1 --username "$$POSTGRES_USER" --dbname "$$TARGET_DB" -c "CREATE EXTENSION IF NOT EXISTS vector;"
+      else
+        echo "Target matches primary database ($$POSTGRES_DB). Skipping separate creation."
+      fi
+
+      echo "=== Initialization completed ==="

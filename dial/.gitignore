@@ -1,0 +1,4 @@
+# Local secrets and generated Core config
+.env
+.env.local
+core/config.json

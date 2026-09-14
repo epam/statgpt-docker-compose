@@ -1,0 +1,22 @@
+{
+  "server": {
+    "port": 8080
+  },
+  "identityProviders": {
+    "test": {
+      "rolePath": "roles",
+      "disableJwtVerification": true
+    }
+  },
+  "encryption": {
+    "secret": "salt",
+    "key": "password"
+  },
+  "toolsets": {
+    "security": {
+      "allowedRedirectUris": [
+        "http://localhost:5000/auth/toolset-signin"
+      ]
+    }
+  }
+}

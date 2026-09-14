@@ -1,0 +1,399 @@
+{
+  "routes": {
+    "statgpt-sdmx-proxy": {
+      "name": "statgpt-sdmx-proxy",
+      "rewritePath": true,
+      "paths": [
+        "/statgpt/sdmx-proxy/api/v0/.*"
+      ],
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "upstreams": [
+        {
+          "endpoint": "http://sdmx-proxy:8050/statgpt/sdmx-proxy/api/v0"
+        }
+      ]
+    },
+    "statgpt-sdmx-proxy-config-server": {
+      "name": "statgpt-sdmx-proxy-config-server",
+      "rewritePath": true,
+      "paths": [
+        "/statgpt/sdmx-proxy-config-server/api/v0/config"
+      ],
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "upstreams": [
+        {
+          "endpoint": "http://sdmx-proxy-config-server:8060/statgpt/sdmx-proxy-config-server/api/v0/config"
+        }
+      ]
+    }
+  },
+  "models": {
+    "gpt-4.1-2025-04-14": {
+      "type": "chat",
+      "displayName": "GPT-4.1",
+      "displayVersion": "2025-04-14",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-4.1-2025-04-14/chat/completions",
+      "forwardAuthToken": true,
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-4.1-2025-04-14/chat/completions",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ]
+    },
+    "gpt-5.4-2026-03-05": {
+      "type": "chat",
+      "displayName": "GPT-5.4",
+      "displayVersion": "2026-03-05",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-5.4-2026-03-05/chat/completions",
+      "forwardAuthToken": true,
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-5.4-2026-03-05/chat/completions",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ]
+    },
+    "text-embedding-3-large": {
+      "type": "embedding",
+      "displayName": "Text Embedding 3 Large",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/text-embedding-3-large/embeddings",
+      "forwardAuthToken": true,
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/text-embedding-3-large/embeddings",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ]
+    },
+    "gpt-5.6-terra-2026-07-09": {
+      "type": "chat",
+      "displayName": "GPT-5.6 Terra",
+      "displayVersion": "2026-07-09",
+      "endpoint": "http://adapter-dial:5000/openai/deployments/gpt-5.6-terra-2026-07-09/chat/completions",
+      "forwardAuthToken": true,
+      "features": {
+        "temperature_supported": false
+      },
+      "upstreams": [
+        {
+          "endpoint": "${REMOTE_DIAL_URL}/openai/deployments/gpt-5.6-terra-2026-07-09/chat/completions",
+          "key": "${REMOTE_DIAL_API_KEY}"
+        }
+      ]
+    }
+  },
+  "applicationTypeSchemas": [
+    {
+      "$schema": "https://dial.epam.com/application_type_schemas/schema#",
+      "$id": "https://dial.epam.com/application_type_schemas/statgpt-generic-rag",
+      "dial:applicationTypeDisplayName": "StatGPT Generic RAG",
+      "dial:applicationTypeCompletionEndpoint": "http://generic-rag:5000/openai/deployments/generic-rag/chat/completions",
+      "dial:applicationTypeConfigurationEndpoint": "http://generic-rag:5000/openai/deployments/generic-rag/configuration",
+      "dial:applicationTypeSchemaEndpoint": "http://generic-rag:5000/application-type-schema",
+      "dial:applicationTypeIconUrl": "RAG_files_search.svg",
+      "dial:appendApplicationPropertiesHeader": false,
+      "dial:applicationTypeRoutes": {
+        "channel": {
+          "dial:rewritePath": true,
+          "dial:paths": [
+            "/channel(/[^/]+)*$"
+          ],
+          "dial:methods": [
+            "DELETE",
+            "GET",
+            "POST",
+            "PUT"
+          ],
+          "dial:upstreams": [
+            {
+              "dial:endpoint": "http://generic-rag:5000"
+            }
+          ]
+        }
+      },
+      "dial:applicationTypeMcp": {
+        "dial:endpoint": "http://generic-rag:5000/mcp/streamable-http",
+        "dial:transport": "HTTP",
+        "dial:allowedTools": [],
+        "dial:mcpConfigDelivery": "HEADER",
+        "dial:forwardPerRequestKey": true
+      }
+    }
+  ],
+  "applications": {
+    "statgpt-sample": {
+      "displayName": "StatGPT Sample",
+      "displayVersion": "default (gpt-4.1-2025-04-14)",
+      "description": "StatGPT sample channel for development and testing.",
+      "descriptionKeywords": [
+        "Talk-To-Your-Data",
+        "IMF",
+        "StatGPT",
+        "SDMX"
+      ],
+      "endpoint": "http://chat-backend:5000/openai/deployments/statgpt-sample/chat/completions",
+      "forwardAuthToken": true,
+      "features": {
+        "configurationEndpoint": "http://chat-backend:5000/openai/deployments/statgpt-sample/configuration"
+      },
+      "application_properties": {
+        "applicationProperties": {}
+      },
+      "mcp": {
+        "endpoint": "http://chat-backend:5000/api/v1/statgpt-sample/mcp/",
+        "transport": "http",
+        "allowedTools": [],
+        "configDelivery": "header",
+        "forwardPerRequestKey": true
+      },
+      "routes": {
+        "deployment-metadata-channel": {
+          "paths": [
+            "/metadata/channel/?"
+          ],
+          "rewritePath": true,
+          "methods": [
+            "GET"
+          ],
+          "upstreams": [
+            {
+              "endpoint": "http://chat-backend:5000"
+            }
+          ]
+        },
+        "deployment-metadata-datasets": {
+          "paths": [
+            "/metadata/datasets/?"
+          ],
+          "rewritePath": true,
+          "methods": [
+            "GET"
+          ],
+          "upstreams": [
+            {
+              "endpoint": "http://chat-backend:5000"
+            }
+          ]
+        },
+        "settings": {
+          "paths": [
+            "/settings/?"
+          ],
+          "rewritePath": true,
+          "methods": [
+            "GET"
+          ],
+          "upstreams": [
+            {
+              "endpoint": "http://chat-backend:5000"
+            }
+          ]
+        },
+        "python-attachment": {
+          "paths": [
+            "/python-attachment/?"
+          ],
+          "rewritePath": true,
+          "methods": [
+            "POST"
+          ],
+          "upstreams": [
+            {
+              "endpoint": "http://chat-backend:5000"
+            }
+          ]
+        }
+      }
+    },
+    "statgpt-generic-rag-grade-b-and-c": {
+      "displayName": "[StatGPT] RAG for Grade B and C datasets",
+      "description": "First version of RAG for Grade B and C datasets, built with Generic RAG (with classic retriever).",
+      "descriptionKeywords": [
+        "Talk-To-Your-Data",
+        "IMF",
+        "StatGPT",
+        "Global Data",
+        "RAG"
+      ],
+      "forwardAuthToken": false,
+      "applicationTypeSchemaId": "https://dial.epam.com/application_type_schemas/statgpt-generic-rag",
+      "applicationProperties": {
+        "metadata_schema": {
+          "properties": {
+            "grade": {
+              "enable_filtering": true,
+              "type": "string"
+            },
+            "statgpt_channel": {
+              "enable_filtering": true,
+              "type": "string"
+            },
+            "agency": {
+              "enable_filtering": true,
+              "type": "string"
+            },
+            "reference_area": {
+              "type": "string"
+            },
+            "parsed_reference_areas": {
+              "enable_filtering": true,
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "parsed_partner_reference_areas": {
+              "enable_filtering": true,
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "frequency_coverage": {
+              "type": "string"
+            },
+            "parsed_frequencies": {
+              "enable_filtering": true,
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "dataset_id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            },
+            "regional_coverage": {
+              "type": "string"
+            },
+            "excluded_regional_values": {
+              "type": "string"
+            },
+            "time_coverage": {
+              "type": "string"
+            },
+            "indicators_coverage": {
+              "type": "string"
+            },
+            "missing_indicators": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "grade",
+            "statgpt_channel",
+            "agency"
+          ],
+          "title": "DiscoveryDatasetMetadataSchema",
+          "type": "object",
+          "additionalProperties": true
+        },
+        "parsers": [],
+        "indexes": {
+          "keyword": {
+            "type": "document",
+            "display_name": "Keyword search",
+            "fields": [
+              "$.metadata.agency",
+              "$.metadata.reference_area",
+              "$.metadata.frequency_coverage",
+              "$.metadata.dataset_id",
+              "$.metadata.name",
+              "$.metadata.url",
+              "$.metadata.regional_coverage",
+              "$.metadata.excluded_regional_values",
+              "$.metadata.time_coverage",
+              "$.metadata.indicators_coverage",
+              "$.metadata.missing_indicators",
+              "$.content"
+            ],
+            "indexer": {
+              "type": "text_normalizer",
+              "language": "english"
+            },
+            "storage": {
+              "backend": "elastic"
+            }
+          },
+          "text-embedding-3-large": {
+            "type": "document",
+            "display_name": "Semantic search",
+            "fields": [
+              "$.metadata.agency",
+              "$.metadata.reference_area",
+              "$.metadata.frequency_coverage",
+              "$.metadata.dataset_id",
+              "$.metadata.name",
+              "$.metadata.url",
+              "$.metadata.regional_coverage",
+              "$.metadata.excluded_regional_values",
+              "$.metadata.time_coverage",
+              "$.metadata.indicators_coverage",
+              "$.metadata.missing_indicators",
+              "$.content"
+            ],
+            "indexer": {
+              "type": "text_embeddings",
+              "deployment_name": "text-embedding-3-large"
+            }
+          }
+        },
+        "retriever": {
+          "type": "classic",
+          "document_selector": {
+            "type": "explicit"
+          }
+        },
+        "generation": {
+          "type": "default",
+          "llm": {
+            "deployment_name": "gpt-5.6-terra-2026-07-09"
+          },
+          "metadata_instructions": {}
+        }
+      }
+    }
+  },
+  "keys": {
+    "statgpt_api_key": {
+      "project": "StatGPT",
+      "role": "statgpt"
+    }
+  },
+  "roles": {
+    "statgpt": {
+      "limits": {
+        "gpt-4.1-2025-04-14": {
+          "day": "10000000",
+          "minute": "640000"
+        },
+        "gpt-5.4-2026-03-05": {
+          "day": "10000000",
+          "minute": "640000"
+        },
+        "gpt-5.6-terra-2026-07-09": {
+          "day": "10000000",
+          "minute": "640000"
+        },
+        "text-embedding-3-large": {
+          "day": "10000000",
+          "minute": "640000"
+        },
+        "statgpt-sample": {},
+        "statgpt-generic-rag-grade-b-and-c": {}
+      }
+    }
+  }
+}

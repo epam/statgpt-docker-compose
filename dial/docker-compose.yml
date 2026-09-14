@@ -1,0 +1,159 @@
+###############################################################################
+# Minimal local DIAL (Core + Redis + dial-to-dial adapter + Chat 1.x + Themes)
+#
+# Joins the external Docker network `statgpt` so StatGPT Compose can reach Core
+# at http://core:8080. Create the network once before starting either stack:
+#   docker network create statgpt
+#
+# Configuration: copy .env.example to .env, run ./generate-config.sh, then:
+#   docker compose up -d
+#
+# Image versions align with DIAL Helm Chart 7.2.0 for Core / adapter / themes.
+# Chat uses the new generation (1.x SPA + NestJS BFF), not the legacy 0.49.x
+# image still referenced by that Helm chart.
+###############################################################################
+
+name: dial
+
+services:
+  #############################################################################
+  # redis
+  #############################################################################
+
+  redis:
+    image: redis:${REDIS_IMAGE_TAG:-8.2.1-alpine3.22}
+    restart: always
+    command: >
+      redis-server
+      --maxmemory 2000mb
+      --maxmemory-policy volatile-lfu
+      --save ""
+      --appendonly no
+      --loglevel warning
+    mem_limit: 2200M
+    networks:
+      - statgpt
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  #############################################################################
+  # core
+  #############################################################################
+
+  core:
+    image: epam/ai-dial-core:${DIAL_CORE_VERSION:-0.47.0}
+    ports:
+      - "8080:8080"
+    environment:
+      AIDIAL_SETTINGS: /opt/settings/settings.json
+      JAVA_OPTS: -Dgflog.config=/opt/settings/gflog.xml
+      LOG_DIR: /app/log
+      STORAGE_DIR: /app/data
+      aidial.config.files: '["/opt/config/config.json"]'
+      aidial.storage.overrides: '{ "jclouds.filesystem.basedir": "data" }'
+      aidial.redis.singleServerConfig.address: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./settings:/opt/settings:ro
+      - ./core:/opt/config:ro
+      - core-logs:/app/log
+      - core-data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - statgpt
+
+  #############################################################################
+  # adapter-dial
+  #############################################################################
+
+  adapter-dial:
+    image: epam/ai-dial-adapter-dial:${DIAL_ADAPTER_DIAL_VERSION:-0.18.0}
+    environment:
+      DIAL_URL: http://core:8080
+      LOG_LEVEL: INFO
+    networks:
+      - statgpt
+
+  #############################################################################
+  # themes
+  #############################################################################
+
+  themes:
+    image: epam/ai-dial-chat-themes:${DIAL_CHAT_THEMES_VERSION:-0.19.1}
+    restart: unless-stopped
+    networks:
+      - statgpt
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q --spider http://127.0.0.1:8080/ || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  #############################################################################
+  # chat
+  #############################################################################
+
+  chat:
+    image: epam/ai-dial-chat:${DIAL_CHAT_VERSION:-1.0.15}
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      PORT: "5000"
+      API_PREFIX: api
+      # Public origin users open in the browser (host-mapped port)
+      CORS_ORIGIN: ${CHAT_CORS_ORIGIN:-http://localhost:5000}
+      DIAL_CORE_URL: ${CHAT_DIAL_CORE_URL:-http://core:8080}
+      DIAL_API_VERSION: ${CHAT_DIAL_API_VERSION:-2025-04-01-preview}
+      DIAL_API_KEY: ${CHAT_DIAL_API_KEY:-statgpt_api_key}
+      THEMES_CONFIG_URL: ${CHAT_THEMES_CONFIG_URL:-http://themes:8080}
+      DEFAULT_DEPLOYMENT: ${CHAT_DEFAULT_DEPLOYMENT:-statgpt-sample}
+      # Session encryption (64 hex chars): openssl rand -hex 32
+      AUTH_SESSION_SECRET: ${CHAT_AUTH_SESSION_SECRET}
+      AUTH_CALLBACK_BASE_URL: ${CHAT_AUTH_CALLBACK_BASE_URL:-http://localhost:5000}
+      AUTH_POST_LOGOUT_REDIRECT_URI: ${CHAT_AUTH_POST_LOGOUT_REDIRECT_URI:-http://localhost:5000}
+      # Required for local HTTP (disables __Host- cookie prefix and HSTS)
+      AUTH_COOKIE_SECURE: ${CHAT_AUTH_COOKIE_SECURE:-false}
+      ### Keycloak Identity Provider ###
+      AUTH_KEYCLOAK_CLIENT_ID: ${CHAT_AUTH_KEYCLOAK_CLIENT_ID:-}
+      AUTH_KEYCLOAK_SECRET: ${CHAT_AUTH_KEYCLOAK_SECRET:-}
+      AUTH_KEYCLOAK_HOST: ${CHAT_AUTH_KEYCLOAK_HOST:-}
+      # AUTH_AZURE_AD_CLIENT_ID: ${CHAT_AUTH_AZURE_AD_CLIENT_ID:-}
+      # AUTH_AZURE_AD_SECRET: ${CHAT_AUTH_AZURE_AD_SECRET:-}
+      # AUTH_AZURE_AD_TENANT_ID: ${CHAT_AUTH_AZURE_AD_TENANT_ID:-}
+    depends_on:
+      - themes
+      - core
+    networks:
+      - statgpt
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:5000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+networks:
+  statgpt:
+    name: statgpt
+    external: true
+
+volumes:
+  core-data:
+  core-logs:
